@@ -10,7 +10,7 @@ oauth:
   base_url: null
 
 pubsub:
-  enabled: true
+  enabled: false
   base_url: "https://pubsub.apache.org:2070/cap"
   basic_auth:
     username: "username"
