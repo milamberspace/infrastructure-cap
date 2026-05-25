@@ -88,7 +88,7 @@ def _construct_app(name: str, settings: Settings) -> Any:
     try:
         import asfquart  # noqa: PLC0415
 
-        return asfquart.construct(name, oauth="/api/auth")
+        return asfquart.construct(name, oauth="/auth")
     except Exception:  # noqa: BLE001 - any failure in asfquart construction
         # In a constrained environment (e.g. unit tests without an asfquart
         # token file on disk) fall back to a plain Quart app so tests can
