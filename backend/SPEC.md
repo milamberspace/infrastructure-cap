@@ -20,6 +20,8 @@ covers:
 3. Exposing the following endpoints:
    - `GET /api` — the auto-generated OpenAPI specification for the entire
      HTTP API. Public (no auth).
+   - `GET /docs` — a Swagger UI HTML page that renders the `/api`
+     document for interactive browsing. Public (no auth).
    - `GET /list` — the list of pending questions visible to the currently
      authenticated user.
    - `POST /question` — create a new question.
@@ -101,7 +103,8 @@ backend/
     ├── pubsub.py               # background publisher that tails
     │                           # audit_log and POSTs events to a
     │                           # pypubsub instance (section 10)
-    ├── openapi.py              # /api endpoint, OpenAPI assembly
+    ├── openapi.py              # /api endpoint (OpenAPI document) and
+    │                           # /docs endpoint (Swagger UI HTML)
     ├── routes/
     │   ├── __init__.py
     │   └── questions.py        # all `/list`, `/question/*`,
@@ -266,9 +269,10 @@ Enforcement strategy:
    `asfquart.construct(...)`) is left at its default mount point and
    is unauthenticated (it has to be, in order to perform the login
    handshake). `GET /api` is also exempt, so the OpenAPI specification
-   can be consumed by external tooling without an ASF account. These
-   are the only two unauthenticated paths; every other route, including
-   any added in the future, requires login by default.
+   can be consumed by external tooling without an ASF account, as is
+   `GET /docs`, the Swagger UI page that renders it (section 9.10).
+   These are the only unauthenticated paths; every other route,
+   including any added in the future, requires login by default.
 2. A `before_request` hook in `cap_backend/auth.py`
    (`require_authentication`) inspects the session for an authenticated
    ASF user. If absent, the hook:
@@ -304,7 +308,7 @@ Authorization beyond "logged in" is layered on per route:
 
 - Standard endpoints (e.g. `/list`) require only that the global hook
   has accepted the request.
-- Administrative endpoints (see section 9.10) additionally require
+- Administrative endpoints (see section 9.11) additionally require
   `session.isRoot`, declared via the asfquart decorator
   `@asfquart.auth.require(R.root)`.
 
@@ -935,7 +939,7 @@ Create a new question. All persisted fields originate here.
   `project_id` must appear in the caller's `session.committees`; a
   caller filing on behalf of a project they are not a member of
   receives `403 Forbidden`. (Admin override is via the `/admin/`
-  endpoints in section 9.10, not here.)
+  endpoints in section 9.11, not here.)
 - **Request body**: `CreateQuestionRequest` (Pydantic), carrying
   every persisted column the caller controls: `request_id`,
   `project_id`, `title`, `description`, `target_audience`,
@@ -1235,7 +1239,41 @@ way for external parties to verify the outcome of a CAP question.
 
 `/api` itself is included in the document it returns.
 
-### 9.10 Administrative endpoints
+### 9.10 `GET /docs`
+
+- **Auth**: **public** (no login required). `/docs` is exempt from the
+  global authentication hook for the same reason `/api` is: external
+  integrators must be able to browse the API surface without an ASF
+  account. The path is added to the allowlist in
+  `cap_backend/auth.PUBLIC_PATHS` alongside `/api`.
+- **Request**: no parameters.
+- **Response**: `200 OK`, `Content-Type: text/html; charset=utf-8`.
+  The body is a small, self-contained HTML document that loads
+  [Swagger UI](https://swagger.io/tools/swagger-ui/) from a public CDN
+  (`cdn.jsdelivr.net/npm/swagger-ui-dist`, pinned to a specific
+  major.minor.patch in `cap_backend/openapi.py`) and points it at
+  `/api` for the OpenAPI document. There are no server-side schemas
+  embedded in the page; rebuilds of the OpenAPI document at `/api`
+  are reflected automatically the next time the page is loaded (or
+  the next time `/api` is re-fetched from cache, whichever comes
+  first).
+- **Generation**: the HTML body is a constant string assembled at
+  import time. There is no per-request rendering and no template
+  engine; the only dynamic input is the pinned swagger-ui version,
+  which is a module-level constant.
+- **Caching**: the response carries `Cache-Control: public, max-age=300`
+  for parity with `/api`. Because the body never changes between
+  service restarts (it is a static HTML literal), this is purely a
+  network-traffic optimization.
+- **Security note**: the page is served at a *public* URL but the
+  underlying API is not — every endpoint listed in the rendered
+  spec still requires the OAuth login declared in the document's
+  `security` block. "Try it out" calls from inside Swagger UI will
+  receive a `401` JSON response (or a redirect to `/auth` for
+  text/html callers) until the caller has logged in through the
+  same browser session.
+
+### 9.11 Administrative endpoints
 
 Administrative endpoints are reserved for SRE-level recovery actions
 (initially, reissuing a permalink after a corrupted resolve, and
@@ -1626,7 +1664,7 @@ trail without re-reading the whole document.
    committee-membership check (sections 7.2 and 8.3.1).
 2. **Audit log retention** is indefinite (section 7.3).
 3. **Admin endpoints** require `session.isRoot` via
-   `@asfquart.auth.require(R.root)` (section 9.10).
+   `@asfquart.auth.require(R.root)` (section 9.11).
 4. **Veto validity** is a community matter, not a server matter:
    the server requires only a non-empty comment, and vetoes can be
    withdrawn by the original voter submitting a non-`-1` response

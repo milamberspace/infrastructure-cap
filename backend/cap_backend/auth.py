@@ -11,10 +11,11 @@ from quart import jsonify, redirect, request
 if TYPE_CHECKING:
     from cap_backend.schemas.questions import Question
 
-# The two unauthenticated paths in the service. /oauth is the ASF OAuth gateway
+# The unauthenticated paths in the service. /oauth is the ASF OAuth gateway
 # (it has to be reachable without a session, to perform the login handshake);
-# /api is the public OpenAPI document. SPEC section 6, point 1.
-PUBLIC_PATHS: frozenset[str] = frozenset({"/api"})
+# /api is the public OpenAPI document; /docs is the Swagger UI page that
+# renders it. SPEC section 6, point 1.
+PUBLIC_PATHS: frozenset[str] = frozenset({"/api", "/docs"})
 OAUTH_PATH_PREFIX = "/auth"
 
 

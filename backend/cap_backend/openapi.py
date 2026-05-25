@@ -1,4 +1,8 @@
-"""``/api`` endpoint serving the cached OpenAPI document. See SPEC section 9.9."""
+"""``/api`` endpoint serving the cached OpenAPI document. See SPEC section 9.9.
+
+Also hosts ``/docs``, a public Swagger UI page that renders the ``/api``
+document (SPEC section 9.10).
+"""
 
 from __future__ import annotations
 
@@ -10,6 +14,40 @@ from quart import Blueprint, Response, current_app
 openapi_bp = Blueprint("openapi", __name__)
 
 _CACHE_KEY = "_cap_openapi_cache"
+
+# Pinned major.minor.patch of swagger-ui-dist served from a public CDN.
+# Bumping the version is a one-line change here; pinning protects us from a
+# CDN-side surprise during a major-version rollover.
+_SWAGGER_UI_VERSION = "5.18.2"
+_SWAGGER_UI_HTML = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>CAP Backend API documentation</title>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@{_SWAGGER_UI_VERSION}/swagger-ui.css">
+    <style>body {{ margin: 0; }}</style>
+  </head>
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@{_SWAGGER_UI_VERSION}/swagger-ui-bundle.js"
+            crossorigin></script>
+    <script>
+      window.onload = () => {{
+        window.ui = SwaggerUIBundle({{
+          url: '/api',
+          dom_id: '#swagger-ui',
+          deepLinking: true,
+          presets: [
+            SwaggerUIBundle.presets.apis,
+            SwaggerUIBundle.SwaggerUIStandalonePreset,
+          ],
+        }});
+      }};
+    </script>
+  </body>
+</html>
+"""
 
 
 def _build_document(app: Any) -> dict[str, Any]:
@@ -40,6 +78,14 @@ async def openapi_document() -> Response:
         cache["body"] = body
 
     response = Response(body, status=200, content_type="application/json")
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+@openapi_bp.get("/docs")
+async def openapi_docs() -> Response:
+    """Return a Swagger UI HTML page rendering the ``/api`` document."""
+    response = Response(_SWAGGER_UI_HTML, status=200, content_type="text/html; charset=utf-8")
     response.headers["Cache-Control"] = "public, max-age=300"
     return response
 

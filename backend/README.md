@@ -41,6 +41,7 @@ pubsub event tailed from the audit log.
 | Method   | Path                       | Auth | Purpose                                            |
 |----------|----------------------------|------|----------------------------------------------------|
 | `GET`    | `/api`                     | none | OpenAPI 3.x document for the whole service         |
+| `GET`    | `/docs`                    | none | Swagger UI rendering of `/api` (SPEC §9.10)        |
 | `GET`    | `/auth`                    | none | asfquart OAuth gateway (login / logout handshake)  |
 | `GET`    | `/list`                    | yes  | Open questions visible to the caller (SPEC §9.1)   |
 | `POST`   | `/question`                | yes  | Create a new question (SPEC §9.2)                  |
@@ -50,9 +51,11 @@ pubsub event tailed from the audit log.
 | `POST`   | `/question/{id}/resolve`   | yes  | Finalize the tally and issue the permalink (§9.6)  |
 | `POST`   | `/question/{id}/responses` | yes  | Submit / amend a response (SPEC §9.7)              |
 
-`/api` is the only public route; every other path is gated by the
-global authentication hook, which redirects browser clients to
-`/auth?login=<return-path>` and returns `401` JSON to API clients.
+`/api` and `/docs` are the only public routes; every other path is
+gated by the global authentication hook, which redirects browser
+clients to `/auth?login=<return-path>` and returns `401` JSON to API
+clients. Endpoints listed by Swagger UI at `/docs` are still
+auth-gated when invoked via "Try it out".
 
 ### Side effects, automatic on every state change
 
