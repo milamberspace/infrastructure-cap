@@ -36,6 +36,8 @@ NotificationEvent = Literal[
 ]
 
 DEBUG = True
+
+
 def recipient_for(question: Question | Any) -> str:
     """Return the mailing-list address for ``question``.
 

@@ -95,33 +95,42 @@ async def _process_until_done(publisher: PubsubPublisher, max_iters: int = 10) -
 
 
 def test_build_url_public():
-    assert build_url(
-        "https://pubsub.example/cap",
-        is_private=False,
-        event_type="created",
-        project="seapony",
-        question_id=4217,
-    ) == "https://pubsub.example/cap/question/created/seapony/4217"
+    assert (
+        build_url(
+            "https://pubsub.example/cap",
+            is_private=False,
+            event_type="created",
+            project="seapony",
+            question_id=4217,
+        )
+        == "https://pubsub.example/cap/question/created/seapony/4217"
+    )
 
 
 def test_build_url_private_inserts_prefix():
-    assert build_url(
-        "https://pubsub.example/cap",
-        is_private=True,
-        event_type="response",
-        project="infra",
-        question_id=9001,
-    ) == "https://pubsub.example/cap/private/question/response/infra/9001"
+    assert (
+        build_url(
+            "https://pubsub.example/cap",
+            is_private=True,
+            event_type="response",
+            project="infra",
+            question_id=9001,
+        )
+        == "https://pubsub.example/cap/private/question/response/infra/9001"
+    )
 
 
 def test_build_url_strips_trailing_slash():
-    assert build_url(
-        "https://pubsub.example/cap/",
-        is_private=False,
-        event_type="resolved",
-        project="x",
-        question_id=1,
-    ) == "https://pubsub.example/cap/question/resolved/x/1"
+    assert (
+        build_url(
+            "https://pubsub.example/cap/",
+            is_private=False,
+            event_type="resolved",
+            project="x",
+            question_id=1,
+        )
+        == "https://pubsub.example/cap/question/resolved/x/1"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,9 +156,7 @@ async def test_cursor_round_trip(app):
 # ---------------------------------------------------------------------------
 
 
-async def test_build_event_payload_includes_required_fields(
-    app, stub_session, seed_questions
-):
+async def test_build_event_payload_includes_required_fields(app, stub_session, seed_questions):
     [qid] = seed_questions(app, count=1)
     db = app.extensions["cap_db"]
     db.conn.execute("BEGIN IMMEDIATE")
@@ -162,9 +169,7 @@ async def test_build_event_payload_includes_required_fields(
     )
     db.conn.execute("COMMIT")
 
-    row = db.conn.execute(
-        "SELECT * FROM audit_log WHERE audit_id = ?", (audit_id,)
-    ).fetchone()
+    row = db.conn.execute("SELECT * FROM audit_log WHERE audit_id = ?", (audit_id,)).fetchone()
     payload = build_event_payload(db.conn, row)
     assert payload is not None
     # SPEC §10.2: every event carries these five top-level keys.
@@ -190,9 +195,7 @@ async def test_build_event_payload_response_includes_response(
         response_id=rid,
     )
     db.conn.execute("COMMIT")
-    row = db.conn.execute(
-        "SELECT * FROM audit_log WHERE audit_id = ?", (audit_id,)
-    ).fetchone()
+    row = db.conn.execute("SELECT * FROM audit_log WHERE audit_id = ?", (audit_id,)).fetchone()
 
     payload = build_event_payload(db.conn, row)
     assert payload is not None
@@ -228,9 +231,7 @@ async def test_build_event_payload_resolved_includes_tally_and_permalink(
     assert payload["tally"]["approval_type"] == "majority_approval"
 
 
-async def test_build_event_payload_edited_includes_diff(
-    app, stub_session, seed_questions
-):
+async def test_build_event_payload_edited_includes_diff(app, stub_session, seed_questions):
     [qid] = seed_questions(app, count=1)
     db = app.extensions["cap_db"]
     db.conn.execute("BEGIN IMMEDIATE")
@@ -274,7 +275,9 @@ async def test_build_event_payload_pii_exclusion(app, stub_session, seed_questio
 
     text = json.dumps(payload).lower()
     for forbidden in ("x-forwarded-for", "cookie", "session", "email", "@apache"):
-        assert forbidden not in text, f"pubsub payload leaked field containing {forbidden!r}: {payload}"
+        assert forbidden not in text, (
+            f"pubsub payload leaked field containing {forbidden!r}: {payload}"
+        )
     # Top-level keys are a closed set.
     assert set(payload.keys()) <= {
         "action",
@@ -377,9 +380,7 @@ async def test_publisher_does_not_advance_cursor_on_failure(
     assert read_cursor(db.conn) == 0
 
 
-async def test_publisher_recovers_after_failure(
-    app, stub_session, seed_questions, tmp_db_path
-):
+async def test_publisher_recovers_after_failure(app, stub_session, seed_questions, tmp_db_path):
     [qid] = seed_questions(app, count=1)
     db = app.extensions["cap_db"]
     db.conn.execute("BEGIN IMMEDIATE")
@@ -425,9 +426,7 @@ async def test_publisher_processes_events_in_audit_id_order(
     assert audit_ids == sorted(audit_ids)
 
 
-async def test_publisher_skips_unknown_audit_action(
-    app, stub_session, seed_questions, tmp_db_path
-):
+async def test_publisher_skips_unknown_audit_action(app, stub_session, seed_questions, tmp_db_path):
     # Insert a row with an action the publisher does not map. The
     # CHECK constraint on audit_log forbids unknown actions, so simulate
     # by inserting a row with a NULL question_id (which the payload builder

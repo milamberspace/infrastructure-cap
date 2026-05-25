@@ -56,9 +56,7 @@ def read_cursor(conn: sqlite3.Connection) -> int:
     row = conn.execute("SELECT last_audit_id FROM pubsub_cursor WHERE id = 1").fetchone()
     if row is None:
         # Schema bootstrap inserts the cursor row, but be defensive.
-        conn.execute(
-            "INSERT OR IGNORE INTO pubsub_cursor (id, last_audit_id) VALUES (1, 0)"
-        )
+        conn.execute("INSERT OR IGNORE INTO pubsub_cursor (id, last_audit_id) VALUES (1, 0)")
         return 0
     return int(row["last_audit_id"])
 
@@ -91,18 +89,14 @@ def _fetch_audit_batch(
 # ---------------------------------------------------------------------------
 
 
-def _serialize_question(
-    conn: sqlite3.Connection, question_id: int
-) -> dict[str, Any] | None:
+def _serialize_question(conn: sqlite3.Connection, question_id: int) -> dict[str, Any] | None:
     row = dao.fetch_question_row(conn, question_id)
     if row is None:
         return None
     return dao.row_to_question(row, viewer=_PUBSUB_VIEWER).model_dump(mode="json")
 
 
-def build_event_payload(
-    conn: sqlite3.Connection, audit_row: sqlite3.Row
-) -> dict[str, Any] | None:
+def build_event_payload(conn: sqlite3.Connection, audit_row: sqlite3.Row) -> dict[str, Any] | None:
     """Return the JSON body for the pubsub event derived from ``audit_row``.
 
     Returns ``None`` when the row should be silently skipped (unknown action,
@@ -136,9 +130,7 @@ def build_event_payload(
     if event_type == "response" and audit_row["response_id"]:
         response_row = dao.fetch_response_row(conn, audit_row["response_id"])
         if response_row is not None:
-            payload["response"] = dao.row_to_stored_response(response_row).model_dump(
-                mode="json"
-            )
+            payload["response"] = dao.row_to_stored_response(response_row).model_dump(mode="json")
     elif event_type == "resolved":
         # The resolve handler already wrote both into details_json.
         payload["tally"] = details.get("tally")
@@ -161,10 +153,7 @@ def build_url(
 ) -> str:
     """Build the pypubsub topic URL for one event."""
     private_prefix = "/private" if is_private else ""
-    return (
-        f"{base_url.rstrip('/')}{private_prefix}/question/"
-        f"{event_type}/{project}/{question_id}"
-    )
+    return f"{base_url.rstrip('/')}{private_prefix}/question/{event_type}/{project}/{question_id}"
 
 
 def _basic_auth_header(username: str | None, password: str | None) -> dict[str, str]:
@@ -254,9 +243,7 @@ class PubsubPublisher:
         self._stop.clear()
         self._backoff = self.poll_interval
         self._task = asyncio.create_task(self._run(), name="cap-pubsub-publisher")
-        LOGGER.info(
-            "Pubsub publisher started: base_url=%s", self.settings.pubsub.base_url
-        )
+        LOGGER.info("Pubsub publisher started: base_url=%s", self.settings.pubsub.base_url)
 
     async def stop(self) -> None:
         self._stop.set()

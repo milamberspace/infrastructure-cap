@@ -51,9 +51,7 @@ def _past_iso(minutes: int = 5) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_submit_vote_response_happy_path(
-    app, stub_session, seed_questions, captured_emails
-):
+async def test_submit_vote_response_happy_path(app, stub_session, seed_questions, captured_emails):
     [qid] = seed_questions(app, count=1, approval_type="majority_approval")
     client = app.test_client()
     response = await client.post(
@@ -89,16 +87,12 @@ async def test_submit_vote_response_happy_path(
     assert mail["thread_key"] == f"cap-question-{qid}"
 
 
-async def test_submit_lazy_consensus_objection(
-    app, stub_session, seed_questions, captured_emails
-):
+async def test_submit_lazy_consensus_objection(app, stub_session, seed_questions, captured_emails):
     [qid] = seed_questions(
         app,
         count=1,
         approval_type="lazy_consensus",
-        response_option_json=json.dumps(
-            {"kind": "lazy_consensus", "allow_comment": True}
-        ),
+        response_option_json=json.dumps({"kind": "lazy_consensus", "allow_comment": True}),
     )
     client = app.test_client()
     response = await client.post(
@@ -111,9 +105,7 @@ async def test_submit_lazy_consensus_objection(
     assert body["comment"] == "concerns"
 
 
-async def test_submit_free_text(
-    app, stub_session, seed_questions, captured_emails
-):
+async def test_submit_free_text(app, stub_session, seed_questions, captured_emails):
     [qid] = seed_questions(
         app,
         count=1,
@@ -168,9 +160,7 @@ async def test_binding_minus_one_on_unanimous_with_comment_is_veto(
     assert body["is_binding"] is True
 
 
-async def test_non_binding_minus_one_on_unanimous_records_no_veto(
-    app, as_user, seed_questions
-):
+async def test_non_binding_minus_one_on_unanimous_records_no_veto(app, as_user, seed_questions):
     # outsider is not on the seapony committee, so any vote they cast is
     # non-binding and (per SPEC §8.3.1) can never veto.
     as_user(AuthenticatedUser(uid="outsider", committees=("other",)))
@@ -191,9 +181,7 @@ async def test_non_binding_minus_one_on_unanimous_records_no_veto(
     assert body["is_veto"] is False
 
 
-async def test_veto_withdrawal_appends_new_row(
-    app, stub_session, seed_questions
-):
+async def test_veto_withdrawal_appends_new_row(app, stub_session, seed_questions):
     [qid] = seed_questions(app, count=1, approval_type="unanimous_approval")
     client = app.test_client()
     veto = await client.post(
@@ -220,9 +208,7 @@ async def test_veto_withdrawal_appends_new_row(
 # ---------------------------------------------------------------------------
 
 
-async def test_kind_mismatch_with_question_option_rejected(
-    app, stub_session, seed_questions
-):
+async def test_kind_mismatch_with_question_option_rejected(app, stub_session, seed_questions):
     [qid] = seed_questions(
         app,
         count=1,
@@ -241,9 +227,7 @@ async def test_kind_mismatch_with_question_option_rejected(
     assert body["error"] == "response_kind_mismatch"
 
 
-async def test_vote_value_not_in_allowed_values_rejected(
-    app, stub_session, seed_questions
-):
+async def test_vote_value_not_in_allowed_values_rejected(app, stub_session, seed_questions):
     [qid] = seed_questions(
         app,
         count=1,
@@ -261,9 +245,7 @@ async def test_vote_value_not_in_allowed_values_rejected(
     assert body["error"] == "value_not_allowed"
 
 
-async def test_free_text_exceeding_max_length_rejected(
-    app, stub_session, seed_questions
-):
+async def test_free_text_exceeding_max_length_rejected(app, stub_session, seed_questions):
     [qid] = seed_questions(
         app,
         count=1,
@@ -303,9 +285,7 @@ async def test_response_after_deadline_rejected_with_409(
     assert captured_emails == []
 
 
-async def test_response_to_resolved_question_rejected_with_409(
-    app, stub_session, seed_questions
-):
+async def test_response_to_resolved_question_rejected_with_409(app, stub_session, seed_questions):
     # Future deadline (default in seed_questions) but status already
     # resolved: SPEC §7.4 step 2 catches this case.
     [qid] = seed_questions(
@@ -324,9 +304,7 @@ async def test_response_to_resolved_question_rejected_with_409(
     assert body["error"] == "not_open"
 
 
-async def test_response_to_removed_question_rejected_with_409(
-    app, stub_session, seed_questions
-):
+async def test_response_to_removed_question_rejected_with_409(app, stub_session, seed_questions):
     [qid] = seed_questions(
         app,
         count=1,
@@ -367,9 +345,7 @@ async def test_response_to_unknown_question_returns_404(app, stub_session):
     assert response.status_code == 404
 
 
-async def test_response_to_private_question_outsider_sees_404(
-    app, as_user, seed_questions
-):
+async def test_response_to_private_question_outsider_sees_404(app, as_user, seed_questions):
     as_user(AuthenticatedUser(uid="outsider", committees=("other",)))
     [qid] = seed_questions(app, count=1, project_id="seapony", is_private=1)
     client = app.test_client()
