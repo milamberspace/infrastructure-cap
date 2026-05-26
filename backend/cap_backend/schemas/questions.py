@@ -59,7 +59,15 @@ class ListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user: ASFUserID
+    # ``pending``: currently-open questions visible to the caller. Sorted
+    # by ``closes_at ASC, question_id ASC`` so the soonest-to-close items
+    # come first. See SPEC §9.1.
     pending: list[Question]
+    # ``recent``: every question (open, resolved, or removed) whose
+    # ``updated_at`` falls within the last 14 days and which the caller
+    # is permitted to view. Sorted by ``updated_at DESC, question_id DESC``
+    # so the most-recently-touched items come first. See SPEC §9.1.
+    recent: list[Question] = Field(default_factory=list)
 
 
 class StoredResponse(BaseModel):

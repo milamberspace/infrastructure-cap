@@ -99,7 +99,12 @@ export interface StoredResponse {
 
 export interface ListResponse {
   user: string;
+  // Open questions awaiting a response, soonest-to-close first.
   pending: Question[];
+  // Every question (open or closed) the caller may view whose
+  // updated_at falls within the past 14 days, most-recently-touched
+  // first. Drives the "Recent activity" tab on the dashboard.
+  recent: Question[];
 }
 
 export interface QuestionDetail {

@@ -75,7 +75,7 @@ async def test_token_handler_returns_session_dict():
     session = await handler(info.token)
     assert session is not None
     assert session["uid"] == "alice"
-    assert session["committees"] == ["seapony", "tooling"]
+    assert session["pmcs"] == ["seapony", "tooling"]
     assert session["metadata"]["scope"] == list(TOKEN_SCOPES)
     assert session["roleaccount"] is False
 

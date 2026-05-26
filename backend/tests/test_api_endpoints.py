@@ -126,6 +126,116 @@ async def test_list_returns_empty_array_not_null(app, stub_session):
     body = await response.get_json()
     assert body["pending"] == []
     assert isinstance(body["pending"], list)
+    assert body["recent"] == []
+    assert isinstance(body["recent"], list)
+
+
+async def test_list_recent_includes_resolved_and_removed_within_window(
+    app, stub_session, seed_questions
+):
+    """SPEC §9.1: `recent` surfaces non-open questions updated in the last 14 days."""
+    from datetime import UTC, datetime, timedelta
+
+    def _iso(dt):
+        return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    now = datetime.now(UTC)
+    fresh = _iso(now - timedelta(days=2))
+    stale = _iso(now - timedelta(days=20))
+
+    [open_id] = seed_questions(app, count=1, status="open", request_id="open_req")
+    [resolved_id] = seed_questions(
+        app,
+        count=1,
+        status="resolved",
+        outcome="approved",
+        request_id="resolved_req",
+        updated_at=fresh,
+    )
+    [removed_id] = seed_questions(
+        app,
+        count=1,
+        status="removed",
+        outcome="withdrawn",
+        request_id="removed_req",
+        updated_at=fresh,
+    )
+    [ancient_id] = seed_questions(
+        app,
+        count=1,
+        status="resolved",
+        outcome="approved",
+        request_id="ancient_req",
+        updated_at=stale,
+    )
+
+    client = app.test_client()
+    response = await client.get("/api/list", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    body = await response.get_json()
+
+    # `pending` still contains only open questions.
+    pending_ids = {q["question_id"] for q in body["pending"]}
+    assert pending_ids == {open_id}
+
+    # `recent` carries the open + the two fresh-but-closed questions, but
+    # not the 20-day-old one.
+    recent_ids = {q["question_id"] for q in body["recent"]}
+    assert open_id in recent_ids
+    assert resolved_id in recent_ids
+    assert removed_id in recent_ids
+    assert ancient_id not in recent_ids
+
+    # Status markers are carried per row so the UI can render an
+    # "open vs closed" indicator without a per-id round trip.
+    by_id = {q["question_id"]: q for q in body["recent"]}
+    assert by_id[open_id]["status"] == "open"
+    assert by_id[resolved_id]["status"] == "resolved"
+    assert by_id[resolved_id]["outcome"] == "approved"
+    assert by_id[removed_id]["status"] == "removed"
+    assert by_id[removed_id]["outcome"] == "withdrawn"
+
+
+async def test_list_recent_respects_private_acl(app, as_user, seed_questions):
+    """Private questions outside the caller's reach must not bleed into `recent`."""
+    from datetime import UTC, datetime, timedelta
+
+    from cap_backend.auth import AuthenticatedUser
+
+    def _iso(dt):
+        return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    fresh = _iso(datetime.now(UTC) - timedelta(days=1))
+
+    as_user(AuthenticatedUser(uid="outsider", committees=("other",)))
+    [hidden_id] = seed_questions(
+        app,
+        count=1,
+        project_id="seapony",
+        is_private=1,
+        status="resolved",
+        outcome="approved",
+        request_id="hidden_req",
+        updated_at=fresh,
+    )
+    [visible_id] = seed_questions(
+        app,
+        count=1,
+        project_id="other",
+        is_private=0,
+        status="resolved",
+        outcome="approved",
+        request_id="visible_req",
+        updated_at=fresh,
+    )
+
+    client = app.test_client()
+    response = await client.get("/api/list", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    body = await response.get_json()
+    recent_ids = {q["question_id"] for q in body["recent"]}
+    assert hidden_id not in recent_ids
+    assert visible_id in recent_ids
 
 
 async def test_api_response_is_cached_across_requests(app):

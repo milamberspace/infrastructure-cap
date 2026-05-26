@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
@@ -84,7 +84,8 @@ async def list_pending() -> Any:
         return _insufficient_scope(PUBLIC_SCOPE)
 
     db = current_app.extensions["cap_db"]
-    rows = db.conn.execute(
+    # `pending`: open questions, soonest-to-close first.
+    open_rows = db.conn.execute(
         """
         SELECT question_id, request_id, project_id, title, description, requester,
                target_audience, approval_type, response_option_json, is_binding,
@@ -95,15 +96,40 @@ async def list_pending() -> Any:
         """
     ).fetchall()
 
+    # `recent`: every question (any status) whose updated_at falls within the
+    # last 14 days, most recently touched first. The Recent activity tab on
+    # the dashboard surfaces this list verbatim, so closed/resolved/withdrawn
+    # questions show up alongside open ones with the same QuestionCard
+    # markers driving status display.
     now = datetime.now(UTC)
+    cutoff = now - timedelta(days=14)
+    recent_rows = db.conn.execute(
+        """
+        SELECT question_id, request_id, project_id, title, description, requester,
+               target_audience, approval_type, response_option_json, is_binding,
+               is_private, permalink, status, outcome, closes_at, created_at, updated_at
+          FROM questions
+         WHERE updated_at >= ?
+         ORDER BY updated_at DESC, question_id DESC
+        """,
+        (cutoff.isoformat(timespec="seconds").replace("+00:00", "Z"),),
+    ).fetchall()
+
     pending: list[Question] = []
-    for row in rows:
+    for row in open_rows:
         question = dao.row_to_question(row, viewer=user, now=now)
         if not can_view_question(user, question):
             continue
         pending.append(question)
 
-    return ListResponse(user=user.uid, pending=pending)
+    recent: list[Question] = []
+    for row in recent_rows:
+        question = dao.row_to_question(row, viewer=user, now=now)
+        if not can_view_question(user, question):
+            continue
+        recent.append(question)
+
+    return ListResponse(user=user.uid, pending=pending, recent=recent)
 
 
 # ---------------------------------------------------------------------------

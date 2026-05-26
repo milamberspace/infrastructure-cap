@@ -1010,20 +1010,36 @@ request creator is responsible for choosing a sensible combination.
 - **Auth**: required (global hook).
 - **Request**: no parameters in this iteration. The user is identified
   from the session.
-- **Response**: `200 OK`, body is `ListResponse` as JSON.
-- **Selection rule**: every question with `status = 'open'` is a
-  candidate; the result is sorted by `closes_at ASC, question_id ASC`
-  so the soonest-to-close items appear first.
-- **ACL filter**: the candidate set is filtered through
+- **Response**: `200 OK`, body is `ListResponse` as JSON. The body
+  carries two arrays — `pending` (open questions awaiting a response)
+  and `recent` (every question of any status whose `updated_at` falls
+  within the past 14 days, the feed the dashboard's "Recent activity"
+  tab renders verbatim).
+- **`pending` selection rule**: every question with `status = 'open'`
+  is a candidate; the result is sorted by `closes_at ASC,
+  question_id ASC` so the soonest-to-close items appear first.
+- **`recent` selection rule**: every question (open, resolved, or
+  removed) whose `updated_at >= now_utc() - 14d` is a candidate; the
+  result is sorted by `updated_at DESC, question_id DESC` so the
+  most-recently-touched items appear first. The 14-day window is
+  fixed at `timedelta(days=14)` in the handler. Open questions
+  appear in both arrays (they have not been touched out of the
+  window, and they remain in `pending`); the frontend uses the
+  per-row `status` and `outcome` fields to render open vs.
+  resolved/withdrawn markers on every card.
+- **ACL filter**: both candidate sets are filtered through
   `auth.can_view_question(...)` (section 7.5). Private questions
   the caller is not entitled to see are silently omitted from the
-  list rather than producing a hint that they exist.
+  arrays rather than producing a hint that they exist.
 - **Per-row stamping**: for every surviving row the handler computes
   `viewer_is_binding = question.is_binding AND project_id in
   session.committees` and `time_remaining_seconds = max(0,
   int((closes_at - now_utc()).total_seconds()))`, then serializes the
-  row through the `Question` Pydantic model.
-- **Empty case**: `pending` is an empty array, not `null`.
+  row through the `Question` Pydantic model. The same stamping
+  applies to both `pending` and `recent` so the frontend never has
+  to recompute these values.
+- **Empty case**: `pending` and `recent` are empty arrays, not
+  `null`.
 - **Errors**:
   - `401 Unauthorized`: not logged in (handled by the global hook).
   - `500 Internal Server Error`: data store unavailable.
@@ -1053,8 +1069,32 @@ Example response:
         "allow_comment": true
       },
       "permalink": null,
+      "status": "open",
+      "outcome": null,
       "viewer_is_binding": true,
       "time_remaining_seconds": 259200
+    }
+  ],
+  "recent": [
+    {
+      "question_id": 4216,
+      "request_id": "req_01HX...",
+      "project_id": "seapony",
+      "title": "Earlier question",
+      "description": "...",
+      "requester": "dave",
+      "target_audience": "PMC: Apache SeaPony",
+      "created_at": "2026-05-18T09:00:00Z",
+      "closes_at": "2026-05-20T09:00:00Z",
+      "approval_type": "lazy_consensus",
+      "is_binding": true,
+      "is_private": false,
+      "response_option": {"kind": "lazy_consensus", "allow_comment": true},
+      "permalink": "/api/resolution/4216",
+      "status": "resolved",
+      "outcome": "approved",
+      "viewer_is_binding": false,
+      "time_remaining_seconds": 0
     }
   ]
 }

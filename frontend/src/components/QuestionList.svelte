@@ -1,20 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { Question, UserSession, QuestionDetail } from "../lib/types";
+  import type { Question, UserSession } from "../lib/types";
   import { api } from "../lib/api";
-  import { cacheQuestion, questionsCache } from "../lib/stores";
   import QuestionCard from "./QuestionCard.svelte";
   import ErrorAlert from "./ErrorAlert.svelte";
 
   export let user: UserSession;
 
   let allOpen: Question[] = [];
+  let allRecent: Question[] = [];
   let loading = true;
   let errorMsg: string | null = null;
   let activeTab: "awaiting" | "recent" = "awaiting";
   let filter = "";
-
-  let recentResolved: Question[] = [];
 
   // Privileged viewers (root or members of the `tooling` committee) receive
   // every question from /list, including those outside their own projects.
@@ -38,19 +36,11 @@
     try {
       const data = await api.list();
       allOpen = data.pending;
-      // Best-effort: pull cached details for any resolved questions we already
-      // know about, so the "Recent activity" tab can show some closed items
-      // without making the dashboard wait on a per-id round trip.
-      const recent: Question[] = [];
-      for (const detail of $questionsCache.values()) {
-        const q = detail.question;
-        if (q.status === "open") continue;
-        const closedAt = Date.parse(q.closes_at);
-        if (Number.isFinite(closedAt) && Date.now() - closedAt < 30 * 86400 * 1000) {
-          recent.push(q);
-        }
-      }
-      recentResolved = recent;
+      // `recent` is populated server-side with every question (any status)
+      // updated in the past 14 days, ACL-filtered. The QuestionCard renders
+      // the open / resolved / withdrawn marker straight from `status` and
+      // `outcome` per row.
+      allRecent = data.recent ?? [];
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : "Failed to load list";
     } finally {
@@ -95,12 +85,14 @@
         a.question_id - b.question_id,
     );
 
-  // "Recent activity": open questions plus any resolved/removed entries we
-  // have in cache. Project-scoped per `inRecentScope`.
-  $: recent = [...allOpen, ...recentResolved]
+  // "Recent activity": every question (open or closed) updated in the
+  // past 14 days, as served by the backend's `recent` array. Project-
+  // scoped per `inRecentScope`; the backend already orders by
+  // updated_at DESC, so we preserve that order rather than re-sorting
+  // by created_at.
+  $: recent = allRecent
     .filter(inRecentScope)
-    .filter((q) => matchesFilter(q, filter))
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    .filter((q) => matchesFilter(q, filter));
 
   onMount(load);
 </script>
@@ -200,8 +192,9 @@
         </div>
         <h5>No recent activity.</h5>
         <p class="small">
-          Questions from your projects and committees over the past 30 days
-          will appear here.
+          Questions from your projects and committees updated in the past
+          14 days will appear here, with a marker showing whether each is
+          still open or already closed.
         </p>
       </div>
     {:else}
