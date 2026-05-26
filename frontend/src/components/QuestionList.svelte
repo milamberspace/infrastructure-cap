@@ -5,7 +5,11 @@
   import QuestionCard from "./QuestionCard.svelte";
   import ErrorAlert from "./ErrorAlert.svelte";
 
-  export let user: UserSession;
+  // ``null`` means the viewer is anonymous (no session). In that case the
+  // list is sourced from /api/publist (which only ever returns public
+  // questions) and every action button on a card is hidden via the
+  // ``readOnly`` flag on QuestionCard.
+  export let user: UserSession | null;
 
   let allOpen: Question[] = [];
   let allRecent: Question[] = [];
@@ -19,11 +23,14 @@
   // The "All projects" switch lets them narrow the view back down to just
   // their own projects/committees without having to log out. Non-privileged
   // viewers always see only what the backend has already filtered for them,
-  // so the switch is hidden for them.
-  $: isPrivilegedViewer = user.isRoot || user.committees.includes("tooling");
+  // so the switch is hidden for them. Anonymous viewers always see every
+  // public question and the switch is meaningless to them.
+  $: isPrivilegedViewer =
+    !!user && (user.isRoot || user.committees.includes("tooling"));
   let showAllProjects = false;
 
   function isOwnProject(q: Question): boolean {
+    if (!user) return false;
     return (
       user.projects.includes(q.project_id) ||
       user.committees.includes(q.project_id)
@@ -34,13 +41,25 @@
     loading = true;
     errorMsg = null;
     try {
-      const data = await api.list();
-      allOpen = data.pending;
-      // `recent` is populated server-side with every question (any status)
-      // updated in the past 14 days, ACL-filtered. The QuestionCard renders
-      // the open / resolved / withdrawn marker straight from `status` and
-      // `outcome` per row.
-      allRecent = data.recent ?? [];
+      if (user) {
+        const data = await api.list();
+        allOpen = data.pending;
+        // `recent` is populated server-side with every question (any
+        // status) updated in the past 14 days, ACL-filtered. The
+        // QuestionCard renders the open / resolved / withdrawn marker
+        // straight from `status` and `outcome` per row.
+        allRecent = data.recent ?? [];
+      } else {
+        // Anonymous mode: /api/publist is the only feed we are allowed
+        // to hit. It returns one flat array — open questions first
+        // (soonest-to-close), then closed-within-14-days. We split it
+        // back into `allOpen` and `allRecent` so the rest of the
+        // component can stay uniform.
+        const data = await api.publicList();
+        const questions = data.questions ?? [];
+        allOpen = questions.filter((q) => q.status === "open");
+        allRecent = questions;
+      }
     } catch (err) {
       errorMsg = err instanceof Error ? err.message : "Failed to load list";
     } finally {
@@ -68,9 +87,18 @@
   // Recent tab scope: same idea, but non-privileged viewers are additionally
   // restricted to their own projects (the dashboard's "Recent activity" tab
   // is project-local even for users whose /list contains questions targeted
-  // at audiences they happen to be in).
+  // at audiences they happen to be in). Anonymous viewers have no project
+  // scope at all, so every public question passes.
   $: inRecentScope = (q: Question) =>
-    isPrivilegedViewer && showAllProjects ? true : isOwnProject(q);
+    !user
+      ? true
+      : isPrivilegedViewer && showAllProjects
+        ? true
+        : isOwnProject(q);
+
+  // When the SPA is in anonymous mode there is no "your" inbox, so the
+  // Awaiting tab is suppressed and Recent becomes the only view.
+  $: if (!user && activeTab === "awaiting") activeTab = "recent";
 
   // "Awaiting your response": open questions where the viewer is in the
   // audience (we let the backend decide who is in /list) and has not yet
@@ -99,17 +127,19 @@
 
 <div>
   <ul class="nav nav-tabs" role="tablist">
-    <li class="nav-item">
-      <button
-        type="button"
-        class="nav-link {activeTab === 'awaiting' ? 'active' : ''}"
-        on:click={() => (activeTab = "awaiting")}
-      >
-        <i class="fa-solid fa-inbox me-1"></i>
-        Awaiting your response
-        <span class="badge bg-secondary ms-1">{awaiting.length}</span>
-      </button>
-    </li>
+    {#if user}
+      <li class="nav-item">
+        <button
+          type="button"
+          class="nav-link {activeTab === 'awaiting' ? 'active' : ''}"
+          on:click={() => (activeTab = "awaiting")}
+        >
+          <i class="fa-solid fa-inbox me-1"></i>
+          Awaiting your response
+          <span class="badge bg-secondary ms-1">{awaiting.length}</span>
+        </button>
+      </li>
+    {/if}
     <li class="nav-item">
       <button
         type="button"
@@ -117,7 +147,7 @@
         on:click={() => (activeTab = "recent")}
       >
         <i class="fa-solid fa-clock-rotate-left me-1"></i>
-        Recent activity
+        {user ? "Recent activity" : "Public questions"}
         <span class="badge bg-secondary ms-1">{recent.length}</span>
       </button>
     </li>
@@ -182,7 +212,7 @@
         </div>
       {:else}
         {#each awaiting as q (q.question_id)}
-          <QuestionCard question={q} />
+          <QuestionCard question={q} readOnly={!user} />
         {/each}
       {/if}
     {:else if recent.length === 0}
@@ -190,16 +220,24 @@
         <div class="empty-icon">
           <i class="fa-regular fa-folder-open"></i>
         </div>
-        <h5>No recent activity.</h5>
-        <p class="small">
-          Questions from your projects and committees updated in the past
-          14 days will appear here, with a marker showing whether each is
-          still open or already closed.
-        </p>
+        {#if user}
+          <h5>No recent activity.</h5>
+          <p class="small">
+            Questions from your projects and committees updated in the past
+            14 days will appear here, with a marker showing whether each
+            is still open or already closed.
+          </p>
+        {:else}
+          <h5>No public questions to show.</h5>
+          <p class="small">
+            Public CAP questions that are still open or were updated in the
+            past 14 days will appear here.
+          </p>
+        {/if}
       </div>
     {:else}
       {#each recent as q (q.question_id)}
-        <QuestionCard question={q} />
+        <QuestionCard question={q} readOnly={!user} />
       {/each}
     {/if}
   </div>

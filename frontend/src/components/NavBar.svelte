@@ -2,10 +2,10 @@
   import { link } from "svelte-spa-router";
   import { session } from "../lib/stores";
   import { config } from "../lib/config";
-  import { loginUrl } from "../lib/auth";
+  import { redirectToLogin } from "../lib/auth";
 
   function logoutHref(): string {
-    const base = `${config.API_BASE}/auth?logout`;
+    const base = `${config.API_BASE}/auth?logout=/`;
     return base;
   }
 </script>
@@ -86,10 +86,16 @@
             </ul>
           </li>
         {:else if $session.status === "anonymous"}
-          <li class="nav-item">
-            <a class="nav-link" href={loginUrl()}>
-              <i class="fa-solid fa-right-to-bracket me-1"></i> Login
-            </a>
+          <li class="nav-item d-flex align-items-center">
+            <button
+              type="button"
+              class="btn btn-sm btn-warning d-flex align-items-center"
+              title="You are browsing as a guest. Click to sign in with your ASF account."
+              on:click={() => redirectToLogin()}
+            >
+              <i class="fa-solid fa-user-slash me-1"></i>
+              Not logged in
+            </button>
           </li>
         {:else if $session.status === "loading"}
           <li class="nav-item">

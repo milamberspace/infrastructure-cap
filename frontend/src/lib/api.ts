@@ -5,6 +5,7 @@ import type {
   EditQuestionRequest,
   ErrorMessage,
   ListResponse,
+  PublicListResponse,
   Question,
   QuestionDetail,
   ResolutionRecord,
@@ -91,6 +92,9 @@ async function request<T>(
 export const api = {
   getSession: () => request<UserSession | ErrorMessage>("GET", "/auth"),
   list: () => request<ListResponse>("GET", "/list"),
+  // Public, unauthenticated feed (SPEC §9.13). Used by the SPA when no
+  // session is available so anonymous visitors still see something.
+  publicList: () => request<PublicListResponse>("GET", "/publist"),
   createQuestion: (body: CreateQuestionRequest) =>
     request<Question>("POST", "/question", body),
   getQuestion: (id: number) =>

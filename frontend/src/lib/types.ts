@@ -107,6 +107,13 @@ export interface ListResponse {
   recent: Question[];
 }
 
+// Body returned by GET /api/publist (SPEC §9.13). Non-private questions
+// that are either still open or were updated in the past 14 days. Used
+// by the dashboard when the SPA is in anonymous (not-logged-in) mode.
+export interface PublicListResponse {
+  questions: Question[];
+}
+
 export interface QuestionDetail {
   question: Question;
   responses: StoredResponse[];

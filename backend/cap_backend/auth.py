@@ -14,8 +14,16 @@ if TYPE_CHECKING:
 # The unauthenticated paths in the service. /api/auth is the ASF OAuth
 # gateway (it has to be reachable without a session, to perform the login
 # handshake); /api/api is the public OpenAPI document; /api/docs is the
-# Swagger UI page that renders it. SPEC section 6, point 1.
-PUBLIC_PATHS: frozenset[str] = frozenset({"/api/api", "/api/docs"})
+# Swagger UI page that renders it; /api/publist is the public read-only
+# feed of non-private questions (SPEC §9.13). SPEC section 6, point 1.
+PUBLIC_PATHS: frozenset[str] = frozenset(
+    {
+        "/api/api",
+        "/api/docs",
+        "/api/publist",
+        "/api/question",
+    }
+)
 OAUTH_PATH_PREFIX = "/api/auth"
 
 
@@ -58,8 +66,9 @@ class AuthenticatedUser:
 
 def is_public_path(path: str) -> bool:
     """Return True for paths exempt from the global authentication hook."""
-    if path in PUBLIC_PATHS:
-        return True
+    for _path in PUBLIC_PATHS:
+        if path.startswith(_path):
+            return True
     return path == OAUTH_PATH_PREFIX or path.startswith(OAUTH_PATH_PREFIX + "/")
 
 
@@ -151,7 +160,7 @@ def user_has_scope(user: AuthenticatedUser, scope: str) -> bool:
     has implicit public-scope access) or the scope appears in their
     issued scope list.
     """
-    if user.scopes is None:
+    if not user or user.scopes is None:
         return True
     if scope == PUBLIC_SCOPE:
         return True

@@ -196,6 +196,168 @@ async def test_list_recent_includes_resolved_and_removed_within_window(
     assert by_id[removed_id]["outcome"] == "withdrawn"
 
 
+async def test_publist_is_public_and_excludes_private(app, seed_questions):
+    """SPEC §9.13: /api/publist must be reachable without auth and must
+    omit every is_private=1 row regardless of status."""
+    from datetime import UTC, datetime, timedelta
+
+    def _iso(dt):
+        return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    fresh = _iso(datetime.now(UTC) - timedelta(days=1))
+
+    [open_pub] = seed_questions(app, count=1, status="open", request_id="open_pub")
+    [open_priv] = seed_questions(app, count=1, status="open", is_private=1, request_id="open_priv")
+    [resolved_pub] = seed_questions(
+        app,
+        count=1,
+        status="resolved",
+        outcome="approved",
+        request_id="resolved_pub",
+        updated_at=fresh,
+    )
+    [resolved_priv] = seed_questions(
+        app,
+        count=1,
+        status="resolved",
+        outcome="approved",
+        is_private=1,
+        request_id="resolved_priv",
+        updated_at=fresh,
+    )
+
+    client = app.test_client()
+    response = await client.get("/api/publist")
+    assert response.status_code == 200
+    body = await response.get_json()
+    ids = {q["question_id"] for q in body["questions"]}
+    assert open_pub in ids
+    assert resolved_pub in ids
+    # Both private rows must be filtered out even though one is still open.
+    assert open_priv not in ids
+    assert resolved_priv not in ids
+
+
+async def test_publist_excludes_closed_outside_14d_window(app, seed_questions):
+    from datetime import UTC, datetime, timedelta
+
+    def _iso(dt):
+        return dt.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    stale = _iso(datetime.now(UTC) - timedelta(days=30))
+    [open_pub] = seed_questions(app, count=1, status="open", request_id="open_pub_a")
+    [ancient_pub] = seed_questions(
+        app,
+        count=1,
+        status="resolved",
+        outcome="approved",
+        request_id="ancient_pub",
+        updated_at=stale,
+    )
+
+    client = app.test_client()
+    response = await client.get("/api/publist")
+    body = await response.get_json()
+    ids = {q["question_id"] for q in body["questions"]}
+    assert open_pub in ids
+    assert ancient_pub not in ids
+
+
+async def test_publist_no_auth_required(app):
+    """Anonymous (no stub_session) callers must still get a 200."""
+    client = app.test_client()
+    response = await client.get("/api/publist", headers={"Accept": "application/json"})
+    assert response.status_code == 200
+    body = await response.get_json()
+    assert body == {"questions": []}
+
+
+async def test_publist_viewer_is_binding_is_false_for_anonymous(app, seed_questions):
+    """No session means no committees, so every row reports
+    viewer_is_binding=False even when the row's is_binding=1."""
+    seed_questions(app, count=1, status="open", is_binding=1)
+    client = app.test_client()
+    response = await client.get("/api/publist")
+    body = await response.get_json()
+    assert body["questions"]
+    assert all(q["viewer_is_binding"] is False for q in body["questions"])
+
+
+# ---------------------------------------------------------------------------
+# /api/publist caching (SPEC §9.13)
+# ---------------------------------------------------------------------------
+
+
+async def test_publist_caches_within_ttl(app, seed_questions, monkeypatch):
+    """A second call within the TTL must return the cached body even if
+    the underlying table grows between the two requests."""
+    import cap_backend.routes.questions as routes
+
+    fake_clock = {"now": 1000.0}
+    monkeypatch.setattr(routes.time, "monotonic", lambda: fake_clock["now"])
+
+    seed_questions(app, count=1, status="open", request_id="cache_first")
+    client = app.test_client()
+    first = await client.get("/api/publist")
+    first_body = await first.get_json()
+    first_ids = {q["question_id"] for q in first_body["questions"]}
+    assert len(first_ids) == 1
+    assert first.headers["Cache-Control"] == "public, max-age=30"
+
+    # Insert a new row that *would* be visible if the handler refreshed.
+    seed_questions(app, count=1, status="open", request_id="cache_second")
+
+    # Advance only 5 seconds — well within the default 30s TTL — and
+    # confirm the cached body is served unchanged.
+    fake_clock["now"] += 5
+    second = await client.get("/api/publist")
+    second_body = await second.get_json()
+    assert {q["question_id"] for q in second_body["questions"]} == first_ids
+
+
+async def test_publist_refreshes_after_ttl(app, seed_questions, monkeypatch):
+    """Crossing the TTL boundary must trigger a refresh."""
+    import cap_backend.routes.questions as routes
+
+    fake_clock = {"now": 1000.0}
+    monkeypatch.setattr(routes.time, "monotonic", lambda: fake_clock["now"])
+
+    seed_questions(app, count=1, status="open", request_id="ttl_first")
+    client = app.test_client()
+    await client.get("/api/publist")
+    seed_questions(app, count=1, status="open", request_id="ttl_second")
+
+    # Jump past the default 30s TTL.
+    fake_clock["now"] += 31
+    refreshed = await client.get("/api/publist")
+    body = await refreshed.get_json()
+    assert len({q["question_id"] for q in body["questions"]}) == 2
+
+
+async def test_publist_ttl_zero_disables_cache(app, settings, seed_questions):
+    """settings.server.publist_cache_seconds == 0 must bypass the cache."""
+    settings.server.publist_cache_seconds = 0
+    seed_questions(app, count=1, status="open", request_id="ttl_zero_a")
+    client = app.test_client()
+    first = await client.get("/api/publist")
+    first_body = await first.get_json()
+    assert len(first_body["questions"]) == 1
+    assert first.headers["Cache-Control"] == "no-store"
+
+    seed_questions(app, count=1, status="open", request_id="ttl_zero_b")
+    second = await client.get("/api/publist")
+    second_body = await second.get_json()
+    assert len(second_body["questions"]) == 2
+
+
+async def test_publist_cache_control_reflects_configured_ttl(app, settings):
+    """The Cache-Control max-age must match the configured TTL."""
+    settings.server.publist_cache_seconds = 120
+    client = app.test_client()
+    response = await client.get("/api/publist")
+    assert response.headers["Cache-Control"] == "public, max-age=120"
+
+
 async def test_list_recent_respects_private_acl(app, as_user, seed_questions):
     """Private questions outside the caller's reach must not bleed into `recent`."""
     from datetime import UTC, datetime, timedelta

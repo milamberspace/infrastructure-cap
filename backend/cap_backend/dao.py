@@ -47,7 +47,9 @@ def row_to_question(
         now = datetime.now(UTC)
 
     response_option: Any = json.loads(row["response_option_json"])
-    viewer_is_binding = bool(row["is_binding"]) and (row["project_id"] in viewer.committees)
+    viewer_is_binding = (
+        viewer and bool(row["is_binding"]) and (row["project_id"] in viewer.committees)
+    ) or False
     remaining = int((closes_at - now).total_seconds())
 
     return Question.model_validate(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -25,6 +26,7 @@ from cap_backend.schemas.questions import (
     CreateQuestionRequest,
     EditQuestionRequest,
     ListResponse,
+    PublicListResponse,
     Question,
     QuestionDetail,
     StoredResponse,
@@ -133,6 +135,84 @@ async def list_pending() -> Any:
 
 
 # ---------------------------------------------------------------------------
+# GET /publist  (public, unauthenticated; SPEC §9.13)
+# ---------------------------------------------------------------------------
+
+
+# Synthetic "viewer" used to project rows through ``row_to_question`` from
+# the unauthenticated public endpoint: no committee membership means
+# ``viewer_is_binding`` is always ``False``, which matches what we want for
+# an anonymous caller.
+_ANONYMOUS_VIEWER = AuthenticatedUser(uid="anonymous", committees=())
+
+# Key under which the public-list cache lives on ``app.extensions``.
+# Stored shape: ``{"model": PublicListResponse, "expires_at": float}``,
+# where ``expires_at`` is a ``time.monotonic()`` deadline. ``model`` is
+# kept as the pydantic instance (not pre-serialized bytes) so that
+# quart-schema's ``@validate_response`` decorator can dispatch through
+# its normal path on a cache hit.
+_PUBLIST_CACHE_KEY = "_cap_publist_cache"
+
+
+def _compute_publist(now: datetime) -> PublicListResponse:
+    """Run the SQL query and project the rows. Pure function w.r.t. the DB."""
+    db = current_app.extensions["cap_db"]
+    cutoff = now - timedelta(days=14)
+    cutoff_iso = cutoff.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    rows = db.conn.execute(
+        """
+        SELECT question_id, request_id, project_id, title, description, requester,
+               target_audience, approval_type, response_option_json, is_binding,
+               is_private, permalink, status, outcome, closes_at, created_at, updated_at
+          FROM questions
+         WHERE is_private = 0
+           AND (status = 'open' OR updated_at >= ?)
+         ORDER BY status = 'open' DESC,
+                  CASE WHEN status = 'open' THEN closes_at END ASC,
+                  updated_at DESC,
+                  question_id DESC
+        """,
+        (cutoff_iso,),
+    ).fetchall()
+
+    questions = [dao.row_to_question(row, viewer=_ANONYMOUS_VIEWER, now=now) for row in rows]
+    return PublicListResponse(questions=questions)
+
+
+@questions_bp.get("/publist")
+@validate_response(PublicListResponse, 200)
+async def public_list() -> Any:
+    """Public read-only feed of non-private CAP questions.
+
+    Returns every question with ``is_private = 0`` whose ``status`` is
+    still ``open`` *or* whose ``updated_at`` falls within the last 14
+    days. No authentication is required (the path is allowlisted in
+    ``auth.PUBLIC_PATHS``).
+
+    The body is cached in process memory for at most
+    ``settings.server.publist_cache_seconds`` seconds. A value of ``0``
+    disables the cache so every request recomputes the response (SPEC
+    §9.13). The ``Cache-Control`` header advertises the same TTL so
+    intermediate caches can mirror the policy.
+    """
+    ttl = _settings().server.publist_cache_seconds
+    cache: dict[str, Any] = current_app.extensions.setdefault(_PUBLIST_CACHE_KEY, {})
+    now_mono = time.monotonic()
+
+    if ttl > 0 and cache.get("expires_at", 0.0) > now_mono and "model" in cache:
+        response = cache["model"]
+    else:
+        response = _compute_publist(datetime.now(UTC))
+        if ttl > 0:
+            cache["model"] = response
+            cache["expires_at"] = now_mono + ttl
+
+    cache_control = f"public, max-age={ttl}" if ttl > 0 else "no-store"
+    return response, 200, {"Cache-Control": cache_control}
+
+
+# ---------------------------------------------------------------------------
 # POST /question
 # ---------------------------------------------------------------------------
 
@@ -218,10 +298,17 @@ async def create_question(data: CreateQuestionRequest) -> Any:
 @document_response(AuthenticationRequired, 401)
 @document_response(ErrorMessage, 404)
 async def get_question(question_id: int) -> Any:
+    """Fetch a single question and its responses.
+
+    Anonymous callers are accepted: they are treated as a viewer with
+    no committees and no root flag, so the ACL in §7.5 collapses every
+    private row into a 404. Public questions are returned in full
+    (matching the read-only experience the SPA shows in its "Not
+    logged in" mode).
+    """
     user = await current_user()
-    if user is None:
-        return await _unauthenticated_response()
-    if not user_has_scope(user, PUBLIC_SCOPE):
+    viewer = user if user is not None else _ANONYMOUS_VIEWER
+    if not user_has_scope(viewer, PUBLIC_SCOPE):
         return _insufficient_scope(PUBLIC_SCOPE)
 
     db = current_app.extensions["cap_db"]
@@ -229,8 +316,8 @@ async def get_question(question_id: int) -> Any:
     if row is None:
         return jsonify({"error": "not_found"}), 404
 
-    question = dao.row_to_question(row, viewer=user)
-    if not can_view_question(user, question):
+    question = dao.row_to_question(row, viewer=viewer)
+    if not can_view_question(viewer, question):
         return jsonify({"error": "not_found"}), 404
 
     response_rows = dao.fetch_all_response_rows(db.conn, question_id)

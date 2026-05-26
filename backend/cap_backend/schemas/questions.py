@@ -70,6 +70,20 @@ class ListResponse(BaseModel):
     recent: list[Question] = Field(default_factory=list)
 
 
+class PublicListResponse(BaseModel):
+    """Body returned by ``GET /api/publist`` (SPEC §9.13).
+
+    Holds every non-private question that is either still open or was
+    last touched within the past 14 days. The endpoint is unauthenticated,
+    so there is no ``user`` field and ``viewer_is_binding`` on every row
+    is always ``False`` (no session implies no committee membership).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    questions: list[Question]
+
+
 class StoredResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

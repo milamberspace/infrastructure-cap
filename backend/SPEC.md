@@ -42,6 +42,9 @@ covers:
    - `GET /api/token` — issue a personal-access bearer token for the
      currently authenticated user (scoped to `ask`, expiring after 24
      hours, capped at five live tokens per ASF UID).
+   - `GET /api/publist` — public, unauthenticated read-only feed of
+     every non-private question that is either still open or was
+     updated in the past 14 days.
 4. Recording every state-changing action in an append-only audit log
    inside the same SQLite transaction that performed the write
    (section 7.3).
@@ -235,6 +238,10 @@ server:
   # in dev); production should set this to the public host, e.g.
   # "https://cap.apache.org".
   permalink_base: ""
+  # Max age (seconds) of the in-process cache that backs /api/publist
+  # (section 9.13). A non-zero value bounds the staleness of the
+  # public feed; setting it to 0 disables caching entirely. Default 30.
+  publist_cache_seconds: 30
 
 database:
   # Absolute or relative path to the SQLite file. The parent directory
@@ -1548,6 +1555,63 @@ user. The token is the credential used by the `Authorization: bearer
   questions and call any public-scope endpoint, but they cannot
   submit responses (which require the `answer` scope) and they
   cannot issue further tokens.
+
+### 9.13 `GET /api/publist`
+
+A read-only public feed of non-private CAP questions. This endpoint
+exists so external dashboards, archives, and ASF-wide audit tooling
+can mirror CAP activity without an authenticated session.
+
+- **Auth**: **public** (no login required). `/api/publist` is added
+  to the allowlist in `cap_backend/auth.PUBLIC_PATHS` alongside
+  `/api/api` and `/api/docs`.
+- **Scope**: not gated by the section 6.3 scope table; the endpoint
+  is open to every anonymous caller.
+- **Request**: no parameters.
+- **Selection rule**: every question with `is_private = 0` whose
+  `status = 'open'` **or** whose `updated_at >= now_utc() - 14d` is
+  included. The 14-day cutoff is fixed in the handler at
+  `timedelta(days=14)`. The result is sorted with open questions
+  first (ordered by `closes_at ASC` so the soonest-to-close items
+  appear earliest), then resolved/removed rows by
+  `updated_at DESC, question_id DESC`.
+- **ACL**: there is no per-viewer ACL because the endpoint never
+  exposes private rows. The `is_private = 0` predicate is the only
+  visibility filter, applied at the SQL level.
+- **Per-row stamping**: rows are projected through the standard
+  `Question` Pydantic model. With no session there is no committee
+  membership to consult, so `viewer_is_binding` is always `False`
+  and `time_remaining_seconds` is the raw clock difference (clamped
+  at zero for already-closed questions).
+- **Response**: `200 OK`, body is a `PublicListResponse`:
+
+  ```python
+  class PublicListResponse(BaseModel):
+      questions: list[Question]
+  ```
+
+  `questions` is an empty array (not `null`) when no row qualifies.
+- **Caching**: the assembled `PublicListResponse` is held in an
+  in-process cache keyed under `app.extensions["_cap_publist_cache"]`
+  with a `time.monotonic()` expiry. The maximum cache age is
+  `settings.server.publist_cache_seconds` (default `30`, configurable
+  via `config.yaml`). A request that arrives while the cache is still
+  fresh is served the cached pydantic model verbatim without hitting
+  SQLite. The `Cache-Control` response header advertises the same
+  TTL (`public, max-age=<ttl>`) so intermediate caches can mirror the
+  policy. Setting `publist_cache_seconds` to `0` disables the cache
+  entirely: every request recomputes and the response carries
+  `Cache-Control: no-store`. The cache has no explicit invalidation
+  hook: state-changing endpoints do not poke it, because the bounded
+  TTL is treated as the upper bound on staleness that callers accept.
+- **Errors**:
+  - `500 Internal Server Error`: data store unavailable.
+
+This endpoint is deliberately disjoint from `/api/list` (section
+9.1): `/api/list` is authenticated, project-scoped, and divides its
+output into `pending` and `recent`; `/api/publist` is anonymous and
+returns a single flat list filtered solely by the public-vs-private
+flag and the 14-day activity window.
 
 ## 10. Pubsub Publishing
 

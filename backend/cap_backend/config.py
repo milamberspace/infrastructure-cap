@@ -20,6 +20,12 @@ class ServerSettings(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8085
     permalink_base: str = ""
+    # ``GET /api/publist`` (SPEC §9.13) is the only endpoint that serves
+    # the same body to every caller, so it is cached in process memory.
+    # This value is the maximum age, in seconds, the cache is allowed to
+    # hold a body for before the next request triggers a refresh. A value
+    # of ``0`` disables the cache entirely (every request recomputes).
+    publist_cache_seconds: int = Field(default=30, ge=0)
 
 
 class DatabaseSettings(BaseModel):

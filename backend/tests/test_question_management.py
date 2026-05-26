@@ -156,6 +156,28 @@ async def test_get_private_question_hidden_as_404(app, as_user, seed_questions):
     assert response.status_code == 404, "Private question must masquerade as 404"
 
 
+async def test_get_public_question_visible_to_anonymous(app, seed_questions, seed_response):
+    """Anonymous callers may read public question detail (SPA read-only mode)."""
+    [qid] = seed_questions(app, count=1, project_id="seapony", is_private=0)
+    seed_response(app, question_id=qid, voter="dave", value="+1")
+    client = app.test_client()
+    response = await client.get(f"/api/question/{qid}")
+    assert response.status_code == 200
+    body = await response.get_json()
+    assert body["question"]["question_id"] == qid
+    # viewer_is_binding is always False for an anonymous viewer (no committees).
+    assert body["question"]["viewer_is_binding"] is False
+    # Responses are surfaced verbatim so the read-only UI can render them.
+    assert len(body["responses"]) == 1
+
+
+async def test_get_private_question_hidden_from_anonymous(app, seed_questions):
+    [qid] = seed_questions(app, count=1, project_id="seapony", is_private=1)
+    client = app.test_client()
+    response = await client.get(f"/api/question/{qid}")
+    assert response.status_code == 404, "Private question must masquerade as 404 for anonymous"
+
+
 # ---------------------------------------------------------------------------
 # PATCH /question/{id}
 # ---------------------------------------------------------------------------

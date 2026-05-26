@@ -5,6 +5,10 @@
   import PrivacyBadge from "./PrivacyBadge.svelte";
 
   export let question: Question;
+  // When true, hide the "Respond" call-to-action: the viewer can read the
+  // question but is not allowed to submit a response (e.g. anonymous
+  // dashboard mode).
+  export let readOnly: boolean = false;
 
   $: outcomeClass =
     question.status === "open"
@@ -73,13 +77,23 @@
               initialSeconds={question.time_remaining_seconds}
             />
           </div>
-          <a
-            href="/question/{question.question_id}"
-            class="btn btn-sm btn-primary"
-            use:link
-          >
-            <i class="fa-solid fa-paper-plane me-1"></i>Respond
-          </a>
+          {#if readOnly}
+            <a
+              href="/question/{question.question_id}"
+              class="btn btn-sm btn-outline-secondary"
+              use:link
+            >
+              View
+            </a>
+          {:else}
+            <a
+              href="/question/{question.question_id}"
+              class="btn btn-sm btn-primary"
+              use:link
+            >
+              <i class="fa-solid fa-paper-plane me-1"></i>Respond
+            </a>
+          {/if}
         {:else}
           <a
             href="/question/{question.question_id}"

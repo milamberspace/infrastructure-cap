@@ -47,6 +47,7 @@ handshake).
 |----------|--------------------------------|-------|----------|----------------------------------------------------|
 | `GET`    | `/api/api`                     | none  | n/a      | OpenAPI 3.x document for the whole service         |
 | `GET`    | `/api/docs`                    | none  | n/a      | Swagger UI rendering of `/api/api` (SPEC §9.10)    |
+| `GET`    | `/api/publist`                 | none  | n/a      | Public feed of non-private questions (SPEC §9.13)  |
 | `GET`    | `/auth`                        | none  | n/a      | asfquart OAuth gateway (login / logout handshake)  |
 | `GET`    | `/api/list`                    | yes   | `public` | Open questions visible to the caller (SPEC §9.1)   |
 | `POST`   | `/api/question`                | yes   | `ask`    | Create a new question (SPEC §9.2)                  |
@@ -57,11 +58,11 @@ handshake).
 | `POST`   | `/api/question/{id}/responses` | yes   | `answer` | Submit / amend a response (SPEC §9.7)              |
 | `GET`    | `/api/token`                   | OAuth | n/a      | Issue a personal-access bearer token (SPEC §9.12)  |
 
-`/api/api` and `/api/docs` are the only public routes; every other
-path is gated by the global authentication hook, which redirects
-browser clients to `/auth?login=<return-path>` and returns `401` JSON
-to API clients. Endpoints listed by Swagger UI at `/api/docs` are
-still auth-gated when invoked via "Try it out".
+`/api/api`, `/api/docs`, and `/api/publist` are the only public
+routes; every other path is gated by the global authentication hook,
+which redirects browser clients to `/api/auth?login=<return-path>`
+and returns `401` JSON to API clients. Endpoints listed by Swagger UI
+at `/api/docs` are still auth-gated when invoked via "Try it out".
 
 ### Authentication and scopes
 
@@ -142,6 +143,10 @@ operationally:
   public host so `permalink` values render as
   `https://cap.apache.org/api/resolution/{id}`. Defaults to empty,
   yielding bare paths (handy in dev).
+- `server.publist_cache_seconds` — max age, in seconds, of the
+  in-process cache that backs `/api/publist` (SPEC §9.13). Default
+  `30`; `0` disables caching so every request recomputes. The
+  endpoint's `Cache-Control` header mirrors this value.
 - `database.path` — absolute or relative path to the SQLite file.
   The parent directory must exist and be writable.
 - `pubsub.enabled` — set to `false` to disable the background
