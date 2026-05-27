@@ -35,9 +35,8 @@ NotificationEvent = Literal[
     "response",
 ]
 
-def recipient_for(
-    question: Question | Any, *, debug_recipient: str | None = None
-) -> str:
+
+def recipient_for(question: Question | Any, *, debug_recipient: str | None = None) -> str:
     """Return the mailing-list address for ``question``.
 
     If ``debug_recipient`` is a non-empty string, every notification is
