@@ -29,7 +29,7 @@
         while the service is still under active development and testing.
       </p>
       <p class="mb-1">
-        Features on thie site may be missing or incomplete,
+        Features on this site may be missing or incomplete,
         data may be reset without notice, schemas may change,
         and outcomes recorded here are not yet authoritative for any
         ASF project. Treat everything you see as illustrative until
