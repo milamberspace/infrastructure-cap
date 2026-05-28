@@ -131,10 +131,7 @@ def _tally_majority(
         "binding_counts": binding_counts,
         "min_binding_plus_one": MIN_BINDING_PLUS_ONE,
     }
-    if (
-        binding_counts["+1"] >= MIN_BINDING_PLUS_ONE
-        and binding_counts["+1"] > binding_counts["-1"]
-    ):
+    if binding_counts["+1"] >= MIN_BINDING_PLUS_ONE and binding_counts["+1"] > binding_counts["-1"]:
         return "approved", tally
     return "insufficient_votes", tally
 
