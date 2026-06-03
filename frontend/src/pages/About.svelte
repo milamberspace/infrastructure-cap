@@ -88,7 +88,7 @@
       <li>a <strong>majority-approval</strong> question by
       counting binding votes against a minimum-three-votes floor</li>
       <li>a <strong>simple-majority</strong> question by counting binding votes with no floor</li>
-      <li>a <strongb>lazy-consensus</strong> question by whether any objection (binding or
+      <li>a <strong>lazy-consensus</strong> question by whether any objection (binding or
       not) has been raised in the voting window</li>
     </ul> 
     <p>
