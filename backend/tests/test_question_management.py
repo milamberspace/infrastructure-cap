@@ -702,7 +702,7 @@ def test_notify_send_includes_uid_and_fullname(monkeypatch):
         body="b",
     )
     assert "Author: alice (Alice Example)\n" in captured[-1]["message"]
-    assert "About CAP:" in captured[-1]["message"]
+    assert "To learn more about CAP, visit" in captured[-1]["message"]
 
     notify.send(
         "created",
