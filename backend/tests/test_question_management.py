@@ -625,9 +625,7 @@ async def test_resolve_simple_majority_more_minus_than_plus_is_insufficient(
     assert body["outcome"] == "insufficient_votes", body
 
 
-async def test_resolve_simple_majority_no_votes_is_insufficient(
-    app, stub_session, seed_questions
-):
+async def test_resolve_simple_majority_no_votes_is_insufficient(app, stub_session, seed_questions):
     """With no binding votes at all, the outcome is insufficient_votes."""
     [qid] = seed_questions(
         app,

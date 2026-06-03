@@ -7,7 +7,6 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import asfquart
 from pydantic import TypeAdapter, ValidationError
 from quart import Blueprint, Response, current_app, jsonify, request
 from quart_schema import document_response, validate_request, validate_response

@@ -21,8 +21,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal
 
-import asfquart
 from quart import request
+
 from cap_backend.schemas.questions import Question
 
 if TYPE_CHECKING:

@@ -39,7 +39,6 @@ SQLite's own terms.
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sqlite3
 import sys
@@ -54,7 +53,6 @@ if str(HERE) not in sys.path:
 
 from cap_backend.config import load_settings  # noqa: E402
 from cap_backend.db import read_schema_sql  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Introspection
@@ -89,7 +87,7 @@ class IndexSchema:
 def _table_columns(conn: sqlite3.Connection, table: str) -> dict[str, Column]:
     rows = conn.execute(f"PRAGMA table_info({_quote_ident(table)})").fetchall()
     cols: dict[str, Column] = {}
-    for cid, name, typ, notnull, dflt, pk in rows:
+    for _cid, name, typ, notnull, dflt, pk in rows:
         cols[name] = Column(
             name=name,
             type=(typ or "").upper(),
@@ -172,9 +170,7 @@ def _rewrite_create_table_to(name: str, original: str, new_name: str) -> str:
     classic 12-step table-rewrite dance.
     """
     pattern = re.compile(
-        r"(?i)\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?"
-        + re.escape(name)
-        + r"\b"
+        r"(?i)\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?" + re.escape(name) + r"\b"
     )
     return pattern.sub(f"CREATE TABLE {new_name}", original, count=1)
 
@@ -283,9 +279,12 @@ def build_plan(live: sqlite3.Connection, target_sql: str) -> Plan:
 
         # If only additive changes (new columns) and they're all ADD-COLUMN
         # compatible, prefer the cheap ALTER path.
-        if not changed and missing_in_db and same_create_ignoring_new_cols(
-            live_tbl.create_sql, target.create_sql, missing_in_db
-        ) and _columns_addable(missing_in_db):
+        if (
+            not changed
+            and missing_in_db
+            and same_create_ignoring_new_cols(live_tbl.create_sql, target.create_sql, missing_in_db)
+            and _columns_addable(missing_in_db)
+        ):
             plan.tables.append(
                 TablePlan(
                     name=name,
@@ -348,9 +347,7 @@ def build_plan(live: sqlite3.Connection, target_sql: str) -> Plan:
     return plan
 
 
-def same_create_ignoring_new_cols(
-    live_sql: str, target_sql: str, new_cols: list[Column]
-) -> bool:
+def same_create_ignoring_new_cols(live_sql: str, target_sql: str, new_cols: list[Column]) -> bool:
     """Approximate "table-level constraints are unchanged" check.
 
     For pure-additive plans we'd like to avoid a full rewrite even though
@@ -414,8 +411,7 @@ def apply_plan(conn: sqlite3.Connection, plan: Plan, target_sql: str) -> None:
         bad = conn.execute("PRAGMA foreign_key_check").fetchall()
         if bad:
             raise RuntimeError(
-                "Foreign-key check failed after rewrite; rolling back. Offending rows: "
-                + repr(bad)
+                "Foreign-key check failed after rewrite; rolling back. Offending rows: " + repr(bad)
             )
         conn.execute("COMMIT")
     except Exception:
@@ -425,9 +421,7 @@ def apply_plan(conn: sqlite3.Connection, plan: Plan, target_sql: str) -> None:
         conn.execute("PRAGMA foreign_keys = ON;")
 
 
-def _rewrite_table(
-    conn: sqlite3.Connection, tplan: TablePlan, indexes: list[IndexSchema]
-) -> None:
+def _rewrite_table(conn: sqlite3.Connection, tplan: TablePlan, indexes: list[IndexSchema]) -> None:
     new_name = f"__cap_upgrade_new_{tplan.name}"
     create_new = _rewrite_create_table_to(tplan.name, tplan.create_sql, new_name)
     conn.execute(create_new)
